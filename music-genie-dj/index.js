@@ -190,12 +190,12 @@ ControllerMusicGenieDj.prototype.handleBrowseUri = function (curUri) {
 
 
 // Fetch audio stream from Music Genie API
-ControllerMusicGenieDj.prototype.fetchTrackStream = function(trackType) {
+ControllerMusicGenieDj.prototype.fetchTrackStream = function(messageId) {
 	var self = this;
 	var defer = libQ.defer();
 	
 	var apiHost = self.config.get('api_host');
-	var apiUrl = apiHost + '/api/message/' + trackType;
+	var apiUrl = apiHost + '/api/message?id=' + messageId;
 	
 	self.logger.info('Fetching track from: ' + apiUrl);
 	
@@ -206,8 +206,8 @@ ControllerMusicGenieDj.prototype.fetchTrackStream = function(trackType) {
 			var track = {
 				service: 'music-genie-dj',
 				type: 'track',
-				title: trackType.charAt(0).toUpperCase() + trackType.slice(1),
-				name: trackType.charAt(0).toUpperCase() + trackType.slice(1),
+				title: "A message from Music Genie",
+				name: "A message from Music Genie",
 				uri: apiUrl,
 				trackType: 'audio/mpeg',
 				albumart: '/albumart?sourceicon=music_service/music-genie-dj/icon.png'
@@ -296,12 +296,20 @@ ControllerMusicGenieDj.prototype.explodeUri = function(uri) {
 	var self = this;
 	var defer = libQ.defer();
 
-	// Parse the URI to get the track type (weather, joke, shoutout)
-	if (uri.startsWith('musicgeniedj/')) {
-		var trackType = uri.split('/')[1];
+	// Parse the URI to extract the message ID
+	// Expected format: musicgeniedj:12345
+	if (uri.startsWith('musicgeniedj:')) {
+		var parts = uri.split(':');
+		var messageId = parts[1];
+		
+		if (!messageId) {
+			self.logger.error('No message ID found in URI: ' + uri);
+			defer.reject(new Error('Invalid URI: missing message ID'));
+			return defer.promise;
+		}
 		
 		// Fetch the track stream from the API
-		self.fetchTrackStream(trackType)
+		self.fetchTrackStream(messageId)
 			.then(function(track) {
 				defer.resolve(track);
 			})
@@ -310,6 +318,7 @@ ControllerMusicGenieDj.prototype.explodeUri = function(uri) {
 				defer.reject(err);
 			});
 	} else {
+		self.logger.error('Invalid URI format: ' + uri);
 		defer.reject(new Error('Invalid URI'));
 	}
 
