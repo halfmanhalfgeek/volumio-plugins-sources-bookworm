@@ -1,4 +1,7 @@
 {
-  "PLUGIN_CONFIGURATION":"Example Plugin Configuration",
-  "SAVE":"Save"
+  "PLUGIN_CONFIGURATION":"Music Genie DJ Configuration",
+  "SAVE":"Save",
+  "API_HOST":"API Host",
+  "API_HOST_DOC":"The URL of the Music Genie service (e.g. http://localhost:3000)",
+  "SETTINGS":"Settings"
 }

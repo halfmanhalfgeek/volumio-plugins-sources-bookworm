@@ -1,14 +1,16 @@
 'use strict';
 
 var libQ = require('kew');
-var fs=require('fs-extra');
+var fs = require('fs-extra');
 var config = new (require('v-conf'))();
 var exec = require('child_process').exec;
 var execSync = require('child_process').execSync;
+var http = require('http');
+var https = require('https');
 
 
-module.exports = music-genie-dj;
-function music-genie-dj(context) {
+module.exports = ControllerMusicGenieDj;
+function ControllerMusicGenieDj(context) {
 	var self = this;
 
 	this.context = context;
@@ -20,7 +22,7 @@ function music-genie-dj(context) {
 
 
 
-music-genie-dj.prototype.onVolumioStart = function()
+ControllerMusicGenieDj.prototype.onVolumioStart = function()
 {
 	var self = this;
 	var configFile=this.commandRouter.pluginManager.getConfigurationFile(this.context,'config.json');
@@ -30,28 +32,34 @@ music-genie-dj.prototype.onVolumioStart = function()
     return libQ.resolve();
 }
 
-music-genie-dj.prototype.onStart = function() {
+ControllerMusicGenieDj.prototype.onStart = function() {
     var self = this;
-	var defer=libQ.defer();
+	var defer = libQ.defer();
 
+	self.mpdPlugin = self.commandRouter.pluginManager.getPlugin('music_service', 'mpd');
+	
+	self.commandRouter.loadI18nStrings();
+	self.addToBrowseSources();
 
-	// Once the Plugin has successfull started resolve the promise
+	// Once the Plugin has successfully started resolve the promise
 	defer.resolve();
 
     return defer.promise;
 };
 
-music-genie-dj.prototype.onStop = function() {
+ControllerMusicGenieDj.prototype.onStop = function() {
     var self = this;
-    var defer=libQ.defer();
+    var defer = libQ.defer();
 
-    // Once the Plugin has successfull stopped resolve the promise
+	self.commandRouter.volumioRemoveToBrowseSources('Music Genie DJ');
+
+    // Once the Plugin has successfully stopped resolve the promise
     defer.resolve();
 
     return libQ.resolve();
 };
 
-music-genie-dj.prototype.onRestart = function() {
+ControllerMusicGenieDj.prototype.onRestart = function() {
     var self = this;
     // Optional, use if you need it
 };
@@ -59,7 +67,7 @@ music-genie-dj.prototype.onRestart = function() {
 
 // Configuration Methods -----------------------------------------------------------------------------
 
-music-genie-dj.prototype.getUIConfig = function() {
+ControllerMusicGenieDj.prototype.getUIConfig = function() {
     var defer = libQ.defer();
     var self = this;
 
@@ -70,7 +78,7 @@ music-genie-dj.prototype.getUIConfig = function() {
         __dirname + '/UIConfig.json')
         .then(function(uiconf)
         {
-
+			uiconf.sections[0].content[0].value = self.config.get('api_host');
 
             defer.resolve(uiconf);
         })
@@ -82,23 +90,35 @@ music-genie-dj.prototype.getUIConfig = function() {
     return defer.promise;
 };
 
-music-genie-dj.prototype.getConfigurationFiles = function() {
+ControllerMusicGenieDj.prototype.getConfigurationFiles = function() {
 	return ['config.json'];
 }
 
-music-genie-dj.prototype.setUIConfig = function(data) {
+ControllerMusicGenieDj.prototype.setUIConfig = function(data) {
 	var self = this;
 	//Perform your installation tasks here
 };
 
-music-genie-dj.prototype.getConf = function(varName) {
+ControllerMusicGenieDj.prototype.getConf = function(varName) {
 	var self = this;
-	//Perform your installation tasks here
+	return self.config.get(varName);
 };
 
-music-genie-dj.prototype.setConf = function(varName, varValue) {
+ControllerMusicGenieDj.prototype.setConf = function(varName, varValue) {
 	var self = this;
-	//Perform your installation tasks here
+	self.config.set(varName, varValue);
+};
+
+ControllerMusicGenieDj.prototype.saveSettings = function(data) {
+	var self = this;
+	var defer = libQ.defer();
+
+	self.config.set('api_host', data['api_host']);
+	
+	self.commandRouter.pushToastMessage('success', 'Music Genie DJ', 'Settings saved successfully');
+	
+	defer.resolve();
+	return defer.promise;
 };
 
 
@@ -107,92 +127,196 @@ music-genie-dj.prototype.setConf = function(varName, varValue) {
 // If your plugin is not a music_sevice don't use this part and delete it
 
 
-music-genie-dj.prototype.addToBrowseSources = function () {
-
-	// Use this function to add your music service plugin to music sources
-    //var data = {name: 'Spotify', uri: 'spotify',plugin_type:'music_service',plugin_name:'spop'};
+ControllerMusicGenieDj.prototype.addToBrowseSources = function () {
+	var self = this;
+	
+	var data = {
+		name: 'Music Genie DJ',
+		uri: 'musicgeniedj',
+		plugin_type: 'music_service',
+		plugin_name: 'music-genie-dj',
+		albumart: '/albumart?sourceicon=music_service/music-genie-dj/icon.png'
+	};
+	
     this.commandRouter.volumioAddToBrowseSources(data);
 };
 
-music-genie-dj.prototype.handleBrowseUri = function (curUri) {
+ControllerMusicGenieDj.prototype.handleBrowseUri = function (curUri) {
     var self = this;
+	var defer = libQ.defer();
 
-    //self.commandRouter.logger.info(curUri);
-    var response;
+	if (curUri === 'musicgeniedj') {
+		var response = {
+			navigation: {
+				lists: [{
+					title: 'Music Genie DJ',
+					icon: 'fa fa-music',
+					availableListViews: ['list'],
+					items: [
+						{
+							service: 'music-genie-dj',
+							type: 'item-no-menu',
+							title: 'Weather',
+							icon: 'fa fa-cloud',
+							uri: 'musicgeniedj/weather'
+						},
+						{
+							service: 'music-genie-dj',
+							type: 'item-no-menu',
+							title: 'Joke',
+							icon: 'fa fa-smile-o',
+							uri: 'musicgeniedj/joke'
+						},
+						{
+							service: 'music-genie-dj',
+							type: 'item-no-menu',
+							title: 'Shoutout',
+							icon: 'fa fa-bullhorn',
+							uri: 'musicgeniedj/shoutout'
+						}
+					]
+				}],
+				prev: {
+					uri: '/'
+				}
+			}
+		};
+		defer.resolve(response);
+	}
 
-
-    return response;
+    return defer.promise;
 };
 
 
 
-// Define a method to clear, add, and play an array of tracks
-music-genie-dj.prototype.clearAddPlayTrack = function(track) {
+// Fetch audio stream from Music Genie API
+ControllerMusicGenieDj.prototype.fetchTrackStream = function(trackType) {
 	var self = this;
-	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'music-genie-dj::clearAddPlayTrack');
+	var defer = libQ.defer();
+	
+	var apiHost = self.config.get('api_host');
+	var apiUrl = apiHost + '/api/message/' + trackType;
+	
+	self.logger.info('Fetching track from: ' + apiUrl);
+	
+	var client = apiUrl.startsWith('https') ? https : http;
+	
+	client.get(apiUrl, function(res) {
+		if (res.statusCode === 200) {
+			var track = {
+				service: 'music-genie-dj',
+				type: 'track',
+				title: trackType.charAt(0).toUpperCase() + trackType.slice(1),
+				name: trackType.charAt(0).toUpperCase() + trackType.slice(1),
+				uri: apiUrl,
+				trackType: 'audio/mpeg',
+				albumart: '/albumart?sourceicon=music_service/music-genie-dj/icon.png'
+			};
+			defer.resolve(track);
+		} else {
+			self.logger.error('Failed to fetch track: ' + res.statusCode);
+			defer.reject(new Error('Failed to fetch track'));
+		}
+	}).on('error', function(err) {
+		self.logger.error('Error fetching track: ' + err.message);
+		defer.reject(err);
+	});
+	
+	return defer.promise;
+};
+
+// Define a method to clear, add, and play an array of tracks
+ControllerMusicGenieDj.prototype.clearAddPlayTrack = function(track) {
+	var self = this;
+	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'ControllerMusicGenieDj::clearAddPlayTrack');
 
 	self.commandRouter.logger.info(JSON.stringify(track));
 
-	return self.sendSpopCommand('uplay', [track.uri]);
+	return self.mpdPlugin.sendMpdCommand('stop', [])
+		.then(function() {
+			return self.mpdPlugin.sendMpdCommand('clear', []);
+		})
+		.then(function() {
+			return self.mpdPlugin.sendMpdCommand('add "' + track.uri + '"', []);
+		})
+		.then(function() {
+			return self.mpdPlugin.sendMpdCommand('play', []);
+		});
 };
 
-music-genie-dj.prototype.seek = function (timepos) {
-    this.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'music-genie-dj::seek to ' + timepos);
+ControllerMusicGenieDj.prototype.seek = function (timepos) {
+	var self = this;
+    this.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'ControllerMusicGenieDj::seek to ' + timepos);
 
-    return this.sendSpopCommand('seek '+timepos, []);
+    return self.mpdPlugin.seek(timepos);
 };
 
 // Stop
-music-genie-dj.prototype.stop = function() {
+ControllerMusicGenieDj.prototype.stop = function() {
 	var self = this;
-	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'music-genie-dj::stop');
+	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'ControllerMusicGenieDj::stop');
 
-
+	return self.mpdPlugin.stop();
 };
 
-// Spop pause
-music-genie-dj.prototype.pause = function() {
+// Pause
+ControllerMusicGenieDj.prototype.pause = function() {
 	var self = this;
-	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'music-genie-dj::pause');
+	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'ControllerMusicGenieDj::pause');
 
-
+	return self.mpdPlugin.pause();
 };
 
 // Get state
-music-genie-dj.prototype.getState = function() {
+ControllerMusicGenieDj.prototype.getState = function() {
 	var self = this;
-	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'music-genie-dj::getState');
+	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'ControllerMusicGenieDj::getState');
 
 
 };
 
 //Parse state
-music-genie-dj.prototype.parseState = function(sState) {
+ControllerMusicGenieDj.prototype.parseState = function(sState) {
 	var self = this;
-	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'music-genie-dj::parseState');
+	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'ControllerMusicGenieDj::parseState');
 
 	//Use this method to parse the state and eventually send it with the following function
 };
 
 // Announce updated State
-music-genie-dj.prototype.pushState = function(state) {
+ControllerMusicGenieDj.prototype.pushState = function(state) {
 	var self = this;
-	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'music-genie-dj::pushState');
+	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'ControllerMusicGenieDj::pushState');
 
 	return self.commandRouter.servicePushState(state, self.servicename);
 };
 
 
-music-genie-dj.prototype.explodeUri = function(uri) {
+ControllerMusicGenieDj.prototype.explodeUri = function(uri) {
 	var self = this;
-	var defer=libQ.defer();
+	var defer = libQ.defer();
 
-	// Mandatory: retrieve all info for a given URI
+	// Parse the URI to get the track type (weather, joke, shoutout)
+	if (uri.startsWith('musicgeniedj/')) {
+		var trackType = uri.split('/')[1];
+		
+		// Fetch the track stream from the API
+		self.fetchTrackStream(trackType)
+			.then(function(track) {
+				defer.resolve(track);
+			})
+			.fail(function(err) {
+				self.logger.error('Error exploding URI: ' + err);
+				defer.reject(err);
+			});
+	} else {
+		defer.reject(new Error('Invalid URI'));
+	}
 
 	return defer.promise;
 };
 
-music-genie-dj.prototype.getAlbumArt = function (data, path) {
+ControllerMusicGenieDj.prototype.getAlbumArt = function (data, path) {
 
 	var artist, album;
 
@@ -231,7 +355,7 @@ music-genie-dj.prototype.getAlbumArt = function (data, path) {
 
 
 
-music-genie-dj.prototype.search = function (query) {
+ControllerMusicGenieDj.prototype.search = function (query) {
 	var self=this;
 	var defer=libQ.defer();
 
@@ -240,24 +364,24 @@ music-genie-dj.prototype.search = function (query) {
 	return defer.promise;
 };
 
-music-genie-dj.prototype._searchArtists = function (results) {
+ControllerMusicGenieDj.prototype._searchArtists = function (results) {
 
 };
 
-music-genie-dj.prototype._searchAlbums = function (results) {
+ControllerMusicGenieDj.prototype._searchAlbums = function (results) {
 
 };
 
-music-genie-dj.prototype._searchPlaylists = function (results) {
+ControllerMusicGenieDj.prototype._searchPlaylists = function (results) {
 
 
 };
 
-music-genie-dj.prototype._searchTracks = function (results) {
+ControllerMusicGenieDj.prototype._searchTracks = function (results) {
 
 };
 
-music-genie-dj.prototype.goto=function(data){
+ControllerMusicGenieDj.prototype.goto=function(data){
     var self=this
     var defer=libQ.defer()
 

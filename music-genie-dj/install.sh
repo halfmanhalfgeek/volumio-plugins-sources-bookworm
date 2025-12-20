@@ -1,13 +1,13 @@
 #!/bin/bash
 
-echo "Installing music-genie-dj Dependencies"
-sudo apt-get update
-# Install the required packages via apt-get
-sudo apt-get -y install
+echo "Installing Music Genie DJ Plugin"
+echo "Installing dependencies"
 
-# If you need to differentiate install for armhf and i386 you can get the variable like this
-#DPKG_ARCH=`dpkg --print-architecture`
-# Then use it to differentiate your install
+# Install npm dependencies
+cd /data/plugins/music_service/music-genie-dj
+npm install --production
 
-#requred to end the plugin install
+echo "Music Genie DJ plugin installed successfully"
+
+# Required to end the plugin install
 echo "plugininstallend"

@@ -3,5 +3,32 @@
     "label": "TRANSLATE.PLUGIN_CONFIGURATION"
   },
   "sections": [
+    {
+      "id": "section_settings",
+      "element": "section",
+      "label": "TRANSLATE.SETTINGS",
+      "icon": "fa-cog",
+      "onSave": {
+        "type": "controller",
+        "endpoint": "music_service/music-genie-dj",
+        "method": "saveSettings"
+      },
+      "saveButton": {
+        "label": "TRANSLATE.SAVE",
+        "data": [
+          "api_host"
+        ]
+      },
+      "content": [
+        {
+          "id": "api_host",
+          "element": "input",
+          "type": "text",
+          "label": "TRANSLATE.API_HOST",
+          "doc": "TRANSLATE.API_HOST_DOC",
+          "value": "http://localhost:3000"
+        }
+      ]
+    }
   ]
 }
