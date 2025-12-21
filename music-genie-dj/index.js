@@ -28,6 +28,9 @@ ControllerMusicGenieDj.prototype.onVolumioStart = function()
 	var configFile=this.commandRouter.pluginManager.getConfigurationFile(this.context,'config.json');
 	this.config = new (require('v-conf'))();
 	this.config.loadFile(configFile);
+	
+	this.logger.info('Music Genie DJ: Config file loaded from: ' + configFile);
+	this.logger.info('Music Genie DJ: API Host: ' + this.config.get('api_host'));
 
     return libQ.resolve();
 }
@@ -194,7 +197,15 @@ ControllerMusicGenieDj.prototype.fetchTrackStream = function(messageId) {
 	var self = this;
 	var defer = libQ.defer();
 	
-	var apiHost = self.config.get('api_host');
+	var apiHost = self.config.get('api_host') || 'http://localhost:3000';
+	self.logger.info('API Host from config: ' + apiHost);
+	
+	if (!apiHost || apiHost === 'undefined') {
+		self.logger.error('API host is not configured');
+		defer.reject(new Error('API host not configured'));
+		return defer.promise;
+	}
+	
 	var apiUrl = apiHost + '/api/message?id=' + messageId;
 	
 	self.logger.info('Fetching track from: ' + apiUrl);
