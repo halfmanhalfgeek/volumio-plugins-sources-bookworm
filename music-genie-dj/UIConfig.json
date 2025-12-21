@@ -9,7 +9,7 @@
       "label": "TRANSLATE.SETTINGS",
       "icon": "fa-cog",
       "onSave": {
-        "type": "controller",
+        "type": "plugin",
         "endpoint": "music_service/music-genie-dj",
         "method": "saveSettings"
       },
