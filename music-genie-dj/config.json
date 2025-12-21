@@ -1,4 +1,10 @@
 {
-  "api_host": "http://localhost:3000",
-  "enabled": true
+  "api_host": {
+    "type": "string",
+    "value": "http://localhost:3000"
+  },
+  "enabled": {
+    "type": "boolean",
+    "value": true
+  }
 }
