@@ -117,9 +117,9 @@ ControllerMusicGenieDj.prototype.saveSettings = function(data) {
 	var defer = libQ.defer();
 
 	self.logger.info('Music Genie DJ: Received data to save: ' + JSON.stringify(data));
-	self.logger.info('Music Genie DJ: Config data before set: ' + JSON.stringify(self.config.data));
 	
-	self.config.set('api_host', data['api_host']);
+	// Directly update the config data object
+	self.config.data.api_host = data['api_host'];
 	
 	self.logger.info('Music Genie DJ: Config data after set: ' + JSON.stringify(self.config.data));
 	
@@ -133,7 +133,6 @@ ControllerMusicGenieDj.prototype.saveSettings = function(data) {
 	self.config.loadFile(configFile);
 	
 	self.logger.info('Music Genie DJ: Settings saved and reloaded. API Host: ' + self.config.get('api_host'));
-	self.logger.info('Music Genie DJ: Full config data after reload: ' + JSON.stringify(self.config.data));
 	
 	self.commandRouter.pushToastMessage('success', 'Music Genie DJ', 'Settings saved successfully');
 	
