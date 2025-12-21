@@ -118,6 +118,11 @@ ControllerMusicGenieDj.prototype.saveSettings = function(data) {
 
 	self.config.set('api_host', data['api_host']);
 	
+	// Save config to disk
+	var configFile = self.commandRouter.pluginManager.getConfigurationFile(self.context, 'config.json');
+	fs.writeFileSync(configFile, JSON.stringify(self.config.data));
+	
+	self.logger.info('Music Genie DJ: Settings saved. API Host: ' + data['api_host']);
 	self.commandRouter.pushToastMessage('success', 'Music Genie DJ', 'Settings saved successfully');
 	
 	defer.resolve();
