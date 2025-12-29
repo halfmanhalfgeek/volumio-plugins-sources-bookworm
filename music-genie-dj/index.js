@@ -44,7 +44,8 @@ ControllerMusicGenieDj.prototype.onStart = function() {
 	
 	// Track previous state for restoration
 	self.previousState = null;
-	self.checkStateInterval = null;
+	self.restoreTimeout = null;
+	self.currentTrackDuration = 0;
 	
 	self.commandRouter.loadI18nStrings();
 	self.addToBrowseSources();
@@ -59,10 +60,10 @@ ControllerMusicGenieDj.prototype.onStop = function() {
     var self = this;
     var defer = libQ.defer();
 
-	// Clean up monitoring interval
-	if (self.checkStateInterval) {
-		clearInterval(self.checkStateInterval);
-		self.checkStateInterval = null;
+	// Clean up restoration timeout
+	if (self.restoreTimeout) {
+		clearTimeout(self.restoreTimeout);
+		self.restoreTimeout = null;
 	}
 
 	self.commandRouter.volumioRemoveToBrowseSources('Music Genie DJ');
@@ -235,6 +236,13 @@ ControllerMusicGenieDj.prototype.fetchTrackStream = function(messageId) {
 	
 	client.get(apiUrl, function(res) {
 		if (res.statusCode === 200) {
+			// Extract duration from response header if available
+			var duration = 0;
+			if (res.headers['x-audio-duration']) {
+				duration = parseInt(res.headers['x-audio-duration'], 10);
+				self.logger.info('Music Genie DJ: Track duration from header: ' + duration + ' seconds');
+			}
+			
 			var track = {
 				service: 'music-genie-dj',
 				type: 'track',
@@ -242,8 +250,13 @@ ControllerMusicGenieDj.prototype.fetchTrackStream = function(messageId) {
 				name: "A message from Music Genie",
 				uri: apiUrl,
 				trackType: 'audio/mpeg',
+				duration: duration,
 				albumart: '/albumart?sourceicon=music_service/music-genie-dj/icon.png'
 			};
+			
+			// Consume the response to complete the request
+			res.resume();
+			
 			defer.resolve(track);
 		} else {
 			self.logger.error('Failed to fetch track: ' + res.statusCode);
@@ -268,6 +281,9 @@ ControllerMusicGenieDj.prototype.clearAddPlayTrack = function(track) {
 	self.previousState = self.commandRouter.stateMachine.getState();
 	self.logger.info('Music Genie DJ: Captured previous state: ' + JSON.stringify(self.previousState));
 
+	// Store track duration for timeout-based completion
+	self.currentTrackDuration = track.duration || 10; // Default to 10 seconds if not specified
+
 	// Step 2: Pause MPD if currently playing
 	return self.mpdPlugin.sendMpdCommand('pause', [])
 		.then(function() {
@@ -288,7 +304,7 @@ ControllerMusicGenieDj.prototype.clearAddPlayTrack = function(track) {
 				uri: track.uri,
 				trackType: track.trackType,
 				seek: 0,
-				duration: 0,
+				duration: self.currentTrackDuration,
 				samplerate: '',
 				bitdepth: '',
 				bitrate: '',
@@ -300,8 +316,8 @@ ControllerMusicGenieDj.prototype.clearAddPlayTrack = function(track) {
 			return self.mpdPlugin.sendMpdCommand('play', []);
 		})
 		.then(function() {
-			// Step 6: Monitor for completion
-			self.startMonitoringPlayback();
+			// Step 6: Schedule restoration after track duration
+			self.scheduleRestoration();
 		});
 };
 
@@ -353,33 +369,25 @@ ControllerMusicGenieDj.prototype.pushState = function(state) {
 	return self.commandRouter.servicePushState(state, self.serviceName);
 };
 
-// Monitor playback to detect when our track finishes
-ControllerMusicGenieDj.prototype.startMonitoringPlayback = function() {
+// Schedule restoration after track duration
+ControllerMusicGenieDj.prototype.scheduleRestoration = function() {
 	var self = this;
 	
-	// Clear any existing interval
-	if (self.checkStateInterval) {
-		clearInterval(self.checkStateInterval);
+	// Clear any existing timeout
+	if (self.restoreTimeout) {
+		clearTimeout(self.restoreTimeout);
 	}
 	
-	self.logger.info('Music Genie DJ: Starting playback monitoring');
+	// Add 1 second buffer to ensure track completes
+	var delayMs = (self.currentTrackDuration + 1) * 1000;
 	
-	// Check MPD status every 500ms
-	self.checkStateInterval = setInterval(function() {
-		self.mpdPlugin.sendMpdCommand('status', [])
-			.then(function(status) {
-				// Status is an object with properties like {state: 'play', ...}
-				if (status && typeof status === 'object' && status.state === 'stop') {
-					self.logger.info('Music Genie DJ: Playback stopped, restoring previous state');
-					clearInterval(self.checkStateInterval);
-					self.checkStateInterval = null;
-					self.restorePreviousState();
-				}
-			})
-			.fail(function(err) {
-				self.logger.error('Music Genie DJ: Error checking status: ' + err);
-			});
-	}, 500);
+	self.logger.info('Music Genie DJ: Scheduling restoration in ' + delayMs + 'ms (' + self.currentTrackDuration + 's track + 1s buffer)');
+	
+	self.restoreTimeout = setTimeout(function() {
+		self.logger.info('Music Genie DJ: Track completed, restoring previous state');
+		self.restoreTimeout = null;
+		self.restorePreviousState();
+	}, delayMs);
 };
 
 // Restore the previous playback state
