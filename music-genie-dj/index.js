@@ -368,8 +368,8 @@ ControllerMusicGenieDj.prototype.startMonitoringPlayback = function() {
 	self.checkStateInterval = setInterval(function() {
 		self.mpdPlugin.sendMpdCommand('status', [])
 			.then(function(status) {
-				// MPD status contains 'state: play/pause/stop'
-				if (status && status.indexOf('state: stop') >= 0) {
+				// Status is an object with properties like {state: 'play', ...}
+				if (status && typeof status === 'object' && status.state === 'stop') {
 					self.logger.info('Music Genie DJ: Playback stopped, restoring previous state');
 					clearInterval(self.checkStateInterval);
 					self.checkStateInterval = null;
