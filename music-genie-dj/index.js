@@ -39,7 +39,12 @@ ControllerMusicGenieDj.prototype.onStart = function() {
     var self = this;
 	var defer = libQ.defer();
 
+	self.serviceName = 'music-genie-dj';
 	self.mpdPlugin = self.commandRouter.pluginManager.getPlugin('music_service', 'mpd');
+	
+	// Track previous state for restoration
+	self.previousState = null;
+	self.checkStateInterval = null;
 	
 	self.commandRouter.loadI18nStrings();
 	self.addToBrowseSources();
@@ -53,6 +58,12 @@ ControllerMusicGenieDj.prototype.onStart = function() {
 ControllerMusicGenieDj.prototype.onStop = function() {
     var self = this;
     var defer = libQ.defer();
+
+	// Clean up monitoring interval
+	if (self.checkStateInterval) {
+		clearInterval(self.checkStateInterval);
+		self.checkStateInterval = null;
+	}
 
 	self.commandRouter.volumioRemoveToBrowseSources('Music Genie DJ');
 
@@ -253,15 +264,44 @@ ControllerMusicGenieDj.prototype.clearAddPlayTrack = function(track) {
 
 	self.commandRouter.logger.info(JSON.stringify(track));
 
-	return self.mpdPlugin.sendMpdCommand('stop', [])
+	// Step 1: Capture current state
+	self.previousState = self.commandRouter.stateMachine.getState();
+	self.logger.info('Music Genie DJ: Captured previous state: ' + JSON.stringify(self.previousState));
+
+	// Step 2: Pause MPD if currently playing
+	return self.mpdPlugin.sendMpdCommand('pause', [])
 		.then(function() {
+			// Step 3: Clear MPD queue and add our track
 			return self.mpdPlugin.sendMpdCommand('clear', []);
 		})
 		.then(function() {
 			return self.mpdPlugin.sendMpdCommand('add "' + track.uri + '"', []);
 		})
 		.then(function() {
+			// Step 4: Push state showing music-genie-dj is now playing
+			var state = {
+				status: 'play',
+				service: self.serviceName,
+				title: track.title,
+				artist: '',
+				album: '',
+				uri: track.uri,
+				trackType: track.trackType,
+				seek: 0,
+				duration: 0,
+				samplerate: '',
+				bitdepth: '',
+				bitrate: '',
+				albumart: track.albumart
+			};
+			self.commandRouter.servicePushState(state, self.serviceName);
+			
+			// Step 5: Start playback
 			return self.mpdPlugin.sendMpdCommand('play', []);
+		})
+		.then(function() {
+			// Step 6: Monitor for completion
+			self.startMonitoringPlayback();
 		});
 };
 
@@ -293,7 +333,8 @@ ControllerMusicGenieDj.prototype.getState = function() {
 	var self = this;
 	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'ControllerMusicGenieDj::getState');
 
-
+	// Return the current state from the state machine
+	return self.commandRouter.stateMachine.getState();
 };
 
 //Parse state
@@ -309,7 +350,70 @@ ControllerMusicGenieDj.prototype.pushState = function(state) {
 	var self = this;
 	self.commandRouter.pushConsoleMessage('[' + Date.now() + '] ' + 'ControllerMusicGenieDj::pushState');
 
-	return self.commandRouter.servicePushState(state, self.servicename);
+	return self.commandRouter.servicePushState(state, self.serviceName);
+};
+
+// Monitor playback to detect when our track finishes
+ControllerMusicGenieDj.prototype.startMonitoringPlayback = function() {
+	var self = this;
+	
+	// Clear any existing interval
+	if (self.checkStateInterval) {
+		clearInterval(self.checkStateInterval);
+	}
+	
+	self.logger.info('Music Genie DJ: Starting playback monitoring');
+	
+	// Check MPD status every 500ms
+	self.checkStateInterval = setInterval(function() {
+		self.mpdPlugin.sendMpdCommand('status', [])
+			.then(function(status) {
+				// MPD status contains 'state: play/pause/stop'
+				if (status && status.indexOf('state: stop') >= 0) {
+					self.logger.info('Music Genie DJ: Playback stopped, restoring previous state');
+					clearInterval(self.checkStateInterval);
+					self.checkStateInterval = null;
+					self.restorePreviousState();
+				}
+			})
+			.fail(function(err) {
+				self.logger.error('Music Genie DJ: Error checking status: ' + err);
+			});
+	}, 500);
+};
+
+// Restore the previous playback state
+ControllerMusicGenieDj.prototype.restorePreviousState = function() {
+	var self = this;
+	
+	if (!self.previousState) {
+		self.logger.info('Music Genie DJ: No previous state to restore');
+		return;
+	}
+	
+	self.logger.info('Music Genie DJ: Restoring service: ' + self.previousState.service);
+	
+	// If previous service was mpd and it was playing, resume it
+	if (self.previousState.service === 'mpd' && self.previousState.status === 'play') {
+		// Push the previous state back
+		self.commandRouter.servicePushState(self.previousState, 'mpd');
+		
+		// Resume playback
+		self.mpdPlugin.sendMpdCommand('play', [])
+			.then(function() {
+				self.logger.info('Music Genie DJ: Resumed MPD playback');
+			})
+			.fail(function(err) {
+				self.logger.error('Music Genie DJ: Error resuming MPD: ' + err);
+			});
+	} else {
+		// For other services or states, just push the state
+		if (self.previousState.service) {
+			self.commandRouter.servicePushState(self.previousState, self.previousState.service);
+		}
+	}
+	
+	self.previousState = null;
 };
 
 
